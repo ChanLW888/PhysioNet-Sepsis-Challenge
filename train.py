@@ -5,6 +5,7 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader, Dataset
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
 
@@ -39,8 +40,15 @@ class PatientDataset(Dataset):
 train_ds = PatientDataset(train_patients, train_labels)
 val_ds = PatientDataset(val_patients, val_labels)
 
-train_loader = DataLoader(train_ds, batch_size=1, shuffle=True)
-val_loader = DataLoader(val_ds, batch_size=1)
+def collate_fn(batch):
+    Xs, ys = zip(*batch)  # unpack
+    Xs_padded = pad_sequence(Xs, batch_first=True)  # pad to max length
+    ys_padded = pad_sequence(ys, batch_first=True)
+    return Xs_padded, ys_padded
+
+train_loader = DataLoader(train_ds, batch_size=32, collate_fn=collate_fn, shuffle=True)
+
+val_loader = DataLoader(val_ds, batch_size=32, collate_fn=collate_fn)
 
 
 for i, (p, l) in enumerate(zip(train_patients, train_labels)):
@@ -60,25 +68,26 @@ for i, (p, l) in enumerate(zip(train_patients, train_labels)):
 
         break  # stop after first problematic patient
 
-class BiGRUModel(nn.Module):
+class RNNModel(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout):
         super().__init__()
-        self.gru = nn.GRU(input_size, hidden_size, num_layers,
+        self.rnn = nn.RNN(input_size, hidden_size, num_layers,
                           batch_first=True, bidirectional=True, dropout=dropout)
         self.fc = nn.Linear(hidden_size*2, output_size)  # *2 for bidirectional
     def forward(self, x):
-        out, _ = self.gru(x)
+        out, _ = self.rnn(x)
         out = self.fc(out)
         return out
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
-model = BiGRUModel(input_size=train_patients[0].shape[1], hidden_size=256, num_layers=3, output_size=1, dropout= 0.3).to(device)
+model = RNNModel(input_size=train_patients[0].shape[1], hidden_size=512, num_layers=4, output_size=1, dropout= 0.5).to(device)
 criterion = nn.BCEWithLogitsLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
 
-for epoch in range(10):
+for epoch in range(50):
     model.train()
     epoch_loss = 0.0
     
@@ -128,8 +137,10 @@ for epoch in range(10):
     print(f"Epoch {epoch+1}, Train Loss: {avg_train_loss:.4f}, "
           f"Val Loss: {avg_val_loss:.4f}, "
           f"Precision: {precision:.4f}, Recall: {recall:.4f}, "
-          f"F1: {f1:.4f}, ROC-AUC: {roc_auc:.4f}")
-
+          f"F1: {f1:.4f}, ROC-AUC: {roc_auc:.4f}, "
+          f"LR: {scheduler.get_last_lr()[0]:.6f}")
+    
+    scheduler.step()
         
 torch.save(model.state_dict(), "rnn_model.pth")
 

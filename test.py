@@ -31,11 +31,11 @@ val_loader = DataLoader(val_ds, batch_size=1)
 
 # 2. Define model (same architecture as training)
 class RNNModel(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, output_size):
-        super(RNNModel, self).__init__()
-        self.rnn = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)
-    
+    def __init__(self, input_size, hidden_size, num_layers, output_size, dropout):
+        super().__init__()
+        self.rnn = nn.RNN(input_size, hidden_size, num_layers,
+                          batch_first=True, bidirectional=True, dropout=dropout)
+        self.fc = nn.Linear(hidden_size*2, output_size)  # *2 for bidirectional
     def forward(self, x):
         out, _ = self.rnn(x)
         out = self.fc(out)
@@ -44,7 +44,7 @@ class RNNModel(nn.Module):
 # 3. Load trained weights
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = RNNModel(input_size=val_patients[0].shape[1],
-                 hidden_size=64, num_layers=2, output_size=1).to(device)
+                 hidden_size=512, num_layers=4, output_size=1, dropout=0.5).to(device)
 model.load_state_dict(torch.load("rnn_model.pth", map_location=device))
 model.eval()
 i=0
@@ -70,5 +70,5 @@ with torch.no_grad():
         print(df_debug.to_string())
         print(i)
         # Stop after showing a few sepsis patients
-        if i >= 2:
+        if i >= 50:
             break
