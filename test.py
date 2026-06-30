@@ -30,21 +30,21 @@ val_ds = PatientDataset(val_patients, val_labels)
 val_loader = DataLoader(val_ds, batch_size=1)
 
 # 2. Define model (same architecture as training)
-class RNNModel(nn.Module):
+class BiGRUModel(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout):
         super().__init__()
-        self.rnn = nn.RNN(input_size, hidden_size, num_layers,
+        self.gru = nn.GRU(input_size, hidden_size, num_layers,
                           batch_first=True, bidirectional=True, dropout=dropout)
         self.fc = nn.Linear(hidden_size*2, output_size)  # *2 for bidirectional
     def forward(self, x):
-        out, _ = self.rnn(x)
+        out, _ = self.gru(x)
         out = self.fc(out)
         return out
 
 # 3. Load trained weights
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = RNNModel(input_size=val_patients[0].shape[1],
-                 hidden_size=512, num_layers=4, output_size=1, dropout=0.5).to(device)
+model = BiGRUModel(input_size=val_patients[0].shape[1],
+                 hidden_size=512, num_layers=3, output_size=1, dropout=0.4).to(device)
 model.load_state_dict(torch.load("rnn_model.pth", map_location=device))
 model.eval()
 i=0
